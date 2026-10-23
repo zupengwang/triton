@@ -642,11 +642,9 @@ class InterpreterBuilder:
     create_lshr = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.right_shift)
     create_minsi = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.minimum)
     create_minui = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.minimum)
-    create_minimumf = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.minimum)
     create_minnumf = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.fmin)
     create_maxsi = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.maximum)
     create_maxui = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.maximum)
-    create_maximumf = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.maximum)
     create_maxnumf = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.fmax)
     create_icmpSLE = lambda self, lhs, rhs: self.comparison_op(lhs, rhs, np.less_equal)
     create_icmpSLT = lambda self, lhs, rhs: self.comparison_op(lhs, rhs, np.less)
@@ -675,6 +673,21 @@ class InterpreterBuilder:
     create_or = lambda self, lhs, rhs: self.binary_op(lhs, rhs, np.bitwise_or)
     create_int_to_ptr = create_bitcast
     create_ptr_to_int = create_bitcast
+
+    def create_minimumf(self, lhs, rhs):
+        result = self.binary_op(lhs, rhs, np.minimum)
+        # IEEE minimum orders -0.0 below +0.0; NumPy's tie handling does not.
+        both_zero = (lhs.data == 0) & (rhs.data == 0)
+        zero = np.where(np.signbit(lhs.data), lhs.data, rhs.data)
+        result.data = np.where(both_zero, zero, result.data)
+        return result
+
+    def create_maximumf(self, lhs, rhs):
+        result = self.binary_op(lhs, rhs, np.maximum)
+        both_zero = (lhs.data == 0) & (rhs.data == 0)
+        zero = np.where(np.signbit(lhs.data), rhs.data, lhs.data)
+        result.data = np.where(both_zero, zero, result.data)
+        return result
 
     def create_idiv(self, lhs, rhs):
         # Triton has IEEE, not numpy/torch, semantics for %, and those carry

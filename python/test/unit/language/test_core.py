@@ -7524,6 +7524,32 @@ def test_num_ctas_pre_sm90(device, fresh_knobs):
 
 
 @pytest.mark.interpreter
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.float64])
+@pytest.mark.parametrize("func", ['minimum', 'maximum'])
+def test_minimum_maximum_signed_zero(dtype, func, device):
+
+    @triton.jit
+    def kernel(X, Y, Z, FUNC: tl.constexpr):
+        offsets = tl.arange(0, 8)
+        x = tl.load(X + offsets)
+        y = tl.load(Y + offsets)
+        tl.store(Z + offsets, getattr(tl, FUNC)(x, y, propagate_nan=tl.PropagateNan.ALL))
+
+    x = torch.tensor([0., -0., 0., -0., 1., -1., float('inf'), float('nan')], dtype=dtype, device=device)
+    y = torch.tensor([-0., 0., 0., -0., -1., 1., float('-inf'), 1.], dtype=dtype, device=device)
+    z = torch.empty_like(x)
+    kernel[(1, )](x, y, z, func)
+
+    if func == 'minimum':
+        expected = [-0., -0., 0., -0., -1., -1., float('-inf'), float('nan')]
+    else:
+        expected = [0., 0., 0., -0., 1., 1., float('inf'), float('nan')]
+    expected = torch.tensor(expected, dtype=dtype, device=device)
+    torch.testing.assert_close(z, expected, rtol=0, atol=0, equal_nan=True)
+    torch.testing.assert_close(torch.signbit(z[:4]), torch.signbit(expected[:4]))
+
+
+@pytest.mark.interpreter
 @pytest.mark.parametrize("dtype", ['bfloat16', 'float16', 'float32'])
 @pytest.mark.parametrize("propagate_nan", ['NONE', 'ALL'])
 @pytest.mark.parametrize("func", ['minimum', 'maximum', 'clamp'])
